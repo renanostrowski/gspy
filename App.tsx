@@ -1,115 +1,156 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * Generated with the TypeScript template
- * https://github.com/react-native-community/react-native-template-typescript
- *
- * @format
- */
-
-import React from 'react';
+import React, {useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
-  useColorScheme,
   View,
+  PermissionsAndroid,
+  Button,
+  Platform,
+  Alert,
 } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
+import NetInfo from '@react-native-community/netinfo';
+import api from './src/api/api';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+interface Location {
+  latitude: string;
+  longitude: string;
+  device: {deviceId: number};
+}
 
-const Section: React.FC<{
-  title: string;
-}> = ({children, title}) => {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
+export default function App() {
+  const [currentLatitude, setCurrentLatitude] = useState('');
+  const [currentLongitude, setCurrentLongitude] = useState('');
+  const [watchID, setWatchID] = useState(0);
+  const [connected, setConnected] = useState(false);
+  const [location, setLocation] = useState<Location>();
+  var listLocation: Location[] = [] as Location[];
+
+  NetInfo.fetch().then(state => {
+    setConnected(state.isConnected || false);
+  });
+
+  const callLocation = () => {
+    console.log('Obtendo localização...');
+    if (Platform.OS === 'ios') {
+      getLocation().then(() => addLocation());
+    } else {
+      const requestLocationPermission = async () => {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
-            color: isDarkMode ? Colors.white : Colors.black,
+            title: 'Permissão de Acesso à Localização',
+            message: 'Este aplicativo precisa acessar sua localização.',
+            buttonNeutral: 'Pergunte-me depois',
+            buttonNegative: 'Cancelar',
+            buttonPositive: 'OK',
           },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-};
-
-const App = () => {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+        );
+        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+          getLocation().then(() => addLocation());
+        } else {
+          Alert.alert('Permissão de Localização negada');
+        }
+      };
+      requestLocationPermission();
+    }
   };
 
+  const getLocation = async () => {
+    await Geolocation.getCurrentPosition(
+      position => {
+        const currentLatitude = JSON.stringify(position.coords.latitude);
+        const currentLongitude = JSON.stringify(position.coords.longitude);
+
+        setCurrentLatitude(currentLatitude);
+        setCurrentLongitude(currentLongitude);
+      },
+      error => Alert.alert(error.message),
+      {enableHighAccuracy: true, timeout: 20000, maximumAge: 1000},
+    );
+    const watchID = Geolocation.watchPosition(position => {
+      const currentLatitude = JSON.stringify(position.coords.latitude);
+      const currentLongitude = JSON.stringify(position.coords.longitude);
+      setCurrentLatitude(currentLatitude);
+      setCurrentLongitude(currentLongitude);
+      const location = {
+        latitude: currentLatitude,
+        longitude: currentLongitude,
+        device: {deviceId: 5},
+      };
+      listLocation.push(location);
+    });
+    setWatchID(watchID);
+
+    const location = {
+      latitude: currentLatitude,
+      longitude: currentLongitude,
+      device: {deviceId: 5},
+    };
+
+    listLocation.push(location);
+  };
+
+  const clearLocation = () => {
+    Geolocation.clearWatch(watchID);
+  };
+
+  const addLocation = () => {
+    if (connected) {
+      for (var i = 0; i < listLocation.length; i++) {
+        api
+          .post('api/location', listLocation[i])
+          .then(response => {
+            console.log(response);
+            listLocation.splice(i);
+          })
+          .catch(err => {
+            console.error('ops! ocorreu um erro' + err);
+          });
+      }
+    }
+  };
+
+  setInterval(function () {
+    callLocation;
+  }, 3000);
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    <View style={styles.container}>
+      <Text style={styles.boldText}>Você está Aqui</Text>
+      <Text style={styles.text}>Latitude: {currentLatitude}</Text>
+      <Text style={styles.text}>Longitude: {currentLongitude}</Text>
+      <View style={styles.button}>
+        <Button title="Obter Localização" onPress={callLocation} />
+      </View>
+      <View style={styles.button}>
+        <Button title="Cancelar Monitoração" onPress={clearLocation} />
+      </View>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 50,
+    padding: 16,
+    backgroundColor: 'white',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  boldText: {
+    fontSize: 30,
+    color: 'red',
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  text: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
   },
-  highlight: {
-    fontWeight: '700',
+  button: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
   },
 });
-
-export default App;
